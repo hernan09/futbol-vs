@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Slider } from "@/components/ui/slider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Wifi, WifiOff, Pencil } from "lucide-react"
-import { UserData, getAllUsers, updateUserStats, updateUserAlias } from "@/lib/firestore"
+import { UserData, getAllUsers, updateUserStats, updateUserAlias, createUserProfile } from "@/lib/firestore"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
@@ -21,11 +21,50 @@ export default function UsersList() {
   useEffect(() => {
     const loadUsers = async () => {
       try {
+        const currentUser = auth.currentUser
+        if (!currentUser) {
+          throw new Error("Usuario no autenticado")
+        }
+
         const result = await getAllUsers()
-        setUsers(result)
-      } catch (err) {
+        if (result.length === 0) {
+          // Si no hay usuarios, creamos uno para el usuario actual
+          const userData: UserData = {
+            id: currentUser.uid,
+            email: currentUser.email || "",
+            alias: currentUser.email || "",
+            stats: {
+              speed: 0,
+              endurance: 0,
+              technique: 0,
+              strength: 0,
+              agility: 0
+            }
+          }
+          
+          // Crear el perfil del usuario
+          const createResult = await createUserProfile(currentUser.uid, currentUser.email || "")
+          if (!createResult.success) {
+            throw new Error("Error al crear el perfil de usuario")
+          }
+          
+          setUsers([userData])
+        } else {
+          setUsers(result)
+        }
+      } catch (err: any) {
         console.error("Error loading users:", err)
-        setError("Error al cargar usuarios")
+        if (err.code === "unavailable") {
+          setIsOffline(true)
+        } else if (err.code === "permission-denied") {
+          setError("No tienes permisos para acceder a los datos. Por favor, inicia sesión nuevamente.")
+        } else if (err.message?.includes("Firestore no está habilitado")) {
+          setError("Firestore no está habilitado. Por favor, habilita Firestore en la consola de Firebase.")
+        } else if (err.message === "Usuario no autenticado") {
+          setError("Debes iniciar sesión para ver los usuarios.")
+        } else {
+          setError("Error al cargar usuarios. Por favor, intenta más tarde.")
+        }
       } finally {
         setLoading(false)
       }
@@ -33,10 +72,9 @@ export default function UsersList() {
 
     loadUsers()
 
-    // Monitorear el estado de la conexión
     const handleOnline = () => {
       setIsOffline(false)
-      loadUsers() // Recargar usuarios cuando se restablece la conexión
+      loadUsers()
     }
     const handleOffline = () => setIsOffline(true)
 
@@ -62,11 +100,15 @@ export default function UsersList() {
           )
         )
       } else {
-        setError("Error al guardar la calificación")
+        setError("Error al guardar la calificación. Por favor, intenta más tarde.")
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error al calificar usuario:", err)
-      setError("Error al guardar la calificación")
+      if (err.code === "permission-denied") {
+        setError("No tienes permisos para calificar usuarios. Por favor, inicia sesión nuevamente.")
+      } else {
+        setError("Error al guardar la calificación. Por favor, intenta más tarde.")
+      }
     }
   }
 
@@ -88,11 +130,15 @@ export default function UsersList() {
         )
         setEditingAlias(prev => ({ ...prev, [userId]: false }))
       } else {
-        setError("Error al guardar el alias")
+        setError("Error al guardar el alias. Por favor, intenta más tarde.")
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error al guardar alias:", err)
-      setError("Error al guardar el alias")
+      if (err.code === "permission-denied") {
+        setError("No tienes permisos para modificar el alias. Por favor, inicia sesión nuevamente.")
+      } else {
+        setError("Error al guardar el alias. Por favor, intenta más tarde.")
+      }
     }
   }
 
