@@ -1,115 +1,107 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, enableIndexedDbPersistence } from "firebase/firestore"
-import { db, auth } from "@/lib/firebase-config"
+import { auth } from "@/lib/firebase-config"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Info, Wifi, WifiOff } from "lucide-react"
-
-interface UserStats {
-  velocidad: number
-  resistencia: number
-  tecnica: number
-  fuerza: number
-  agilidad: number
-}
-
-interface User {
-  id: string
-  email: string
-  username: string
-  stats?: UserStats
-  ratedBy?: {
-    [userId: string]: UserStats
-  }
-}
+import { Wifi, WifiOff, Pencil } from "lucide-react"
+import { UserData, getAllUsers, updateUserStats, updateUserAlias } from "@/lib/firestore"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 export default function UsersList() {
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isOffline, setIsOffline] = useState(false)
+  const [editingAlias, setEditingAlias] = useState<{ [key: string]: boolean }>({})
+  const [newAlias, setNewAlias] = useState<{ [key: string]: string }>({})
 
   useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const result = await getAllUsers()
+        setUsers(result)
+      } catch (err) {
+        console.error("Error loading users:", err)
+        setError("Error al cargar usuarios")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadUsers()
+
     // Monitorear el estado de la conexión
-    const handleOnline = () => setIsOffline(false)
+    const handleOnline = () => {
+      setIsOffline(false)
+      loadUsers() // Recargar usuarios cuando se restablece la conexión
+    }
     const handleOffline = () => setIsOffline(true)
 
     window.addEventListener("online", handleOnline)
     window.addEventListener("offline", handleOffline)
     setIsOffline(!navigator.onLine)
 
-    const q = query(collection(db, "users"))
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const usersList: User[] = []
-        snapshot.forEach((doc) => {
-          usersList.push({ id: doc.id, ...doc.data() } as User)
-        })
-        setUsers(usersList)
-        setLoading(false)
-      },
-      (err) => {
-        console.error("Error fetching users:", err)
-        if (err.code === 'unavailable') {
-          setError("No se pudo conectar a Firestore. Los datos se mostrarán desde la caché local.")
-          setIsOffline(true)
-        } else {
-          setError("Error al cargar los usuarios")
-        }
-        setLoading(false)
-      }
-    )
-
     return () => {
       window.removeEventListener("online", handleOnline)
       window.removeEventListener("offline", handleOffline)
-      unsubscribe()
     }
   }, [])
 
-  const handleRateUser = async (userId: string, stats: UserStats) => {
+  const handleRateUser = async (userId: string, stats: UserData["stats"]) => {
     try {
-      const userDoc = doc(db, "users", userId)
-      const userSnapshot = await getDoc(userDoc)
-      
-      if (!userSnapshot.exists()) {
-        throw new Error("Usuario no encontrado")
-      }
-
-      const currentData = userSnapshot.data()
-      const currentUser = auth.currentUser
-
-      if (!currentUser) {
-        throw new Error("Usuario no autenticado")
-      }
-
-      const updatedRatedBy = {
-        ...currentData.ratedBy,
-        [currentUser.uid]: stats
-      }
-
-      await updateDoc(userDoc, {
-        ratedBy: updatedRatedBy
-      })
-    } catch (err: any) {
-      console.error("Error al calificar usuario:", err)
-      if (err.code === 'unavailable') {
-        setError("No se pudo guardar la calificación. Se intentará nuevamente cuando se restablezca la conexión.")
+      const result = await updateUserStats(userId, stats)
+      if (result.success) {
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === userId 
+              ? { ...user, stats } 
+              : user
+          )
+        )
       } else {
         setError("Error al guardar la calificación")
       }
+    } catch (err) {
+      console.error("Error al calificar usuario:", err)
+      setError("Error al guardar la calificación")
+    }
+  }
+
+  const handleEditAlias = (userId: string) => {
+    setEditingAlias(prev => ({ ...prev, [userId]: true }))
+    setNewAlias(prev => ({ ...prev, [userId]: users.find(u => u.id === userId)?.alias || "" }))
+  }
+
+  const handleSaveAlias = async (userId: string) => {
+    try {
+      const result = await updateUserAlias(userId, newAlias[userId])
+      if (result.success) {
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === userId 
+              ? { ...user, alias: newAlias[userId] } 
+              : user
+          )
+        )
+        setEditingAlias(prev => ({ ...prev, [userId]: false }))
+      } else {
+        setError("Error al guardar el alias")
+      }
+    } catch (err) {
+      console.error("Error al guardar alias:", err)
+      setError("Error al guardar el alias")
     }
   }
 
   if (loading) {
-    return <div className="text-white">Cargando usuarios...</div>
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-white">Cargando usuarios...</div>
+      </div>
+    )
   }
 
   return (
@@ -139,93 +131,127 @@ export default function UsersList() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {users.map((user) => (
-          <Card key={user.id} className="border-slate-700 bg-slate-800 text-white">
-            <CardHeader>
-              <CardTitle>{user.username}</CardTitle>
-              <CardDescription className="text-slate-400">{user.email}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Velocidad</label>
-                  <Slider
-                    defaultValue={[user.stats?.velocidad || 0]}
-                    max={100}
-                    step={1}
-                    onValueChange={(value) => {
-                      const newStats = {
-                        ...user.stats,
-                        velocidad: value[0]
-                      }
-                      handleRateUser(user.id, newStats as UserStats)
-                    }}
-                  />
+        {users.length === 0 ? (
+          <div className="col-span-full text-center text-white">
+            <p>No hay usuarios registrados aún.</p>
+          </div>
+        ) : (
+          users.map((user) => (
+            <Card key={user.id} className="border-slate-700 bg-slate-800 text-white">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  {editingAlias[user.id] ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newAlias[user.id] || ""}
+                        onChange={(e) => setNewAlias(prev => ({ ...prev, [user.id]: e.target.value }))}
+                        className="bg-slate-700 text-white"
+                      />
+                      <Button 
+                        onClick={() => handleSaveAlias(user.id)}
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        Guardar
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <CardTitle>{user.alias}</CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditAlias(user.id)}
+                        className="text-slate-400 hover:text-white"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Resistencia</label>
-                  <Slider
-                    defaultValue={[user.stats?.resistencia || 0]}
-                    max={100}
-                    step={1}
-                    onValueChange={(value) => {
-                      const newStats = {
-                        ...user.stats,
-                        resistencia: value[0]
-                      }
-                      handleRateUser(user.id, newStats as UserStats)
-                    }}
-                  />
+                <CardDescription className="text-slate-400">{user.email}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">Velocidad</label>
+                    <Slider
+                      defaultValue={[user.stats.speed]}
+                      max={100}
+                      step={1}
+                      onValueChange={(value) => {
+                        const newStats = {
+                          ...user.stats,
+                          speed: value[0]
+                        }
+                        handleRateUser(user.id, newStats)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">Resistencia</label>
+                    <Slider
+                      defaultValue={[user.stats.endurance]}
+                      max={100}
+                      step={1}
+                      onValueChange={(value) => {
+                        const newStats = {
+                          ...user.stats,
+                          endurance: value[0]
+                        }
+                        handleRateUser(user.id, newStats)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">Técnica</label>
+                    <Slider
+                      defaultValue={[user.stats.technique]}
+                      max={100}
+                      step={1}
+                      onValueChange={(value) => {
+                        const newStats = {
+                          ...user.stats,
+                          technique: value[0]
+                        }
+                        handleRateUser(user.id, newStats)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">Fuerza</label>
+                    <Slider
+                      defaultValue={[user.stats.strength]}
+                      max={100}
+                      step={1}
+                      onValueChange={(value) => {
+                        const newStats = {
+                          ...user.stats,
+                          strength: value[0]
+                        }
+                        handleRateUser(user.id, newStats)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">Agilidad</label>
+                    <Slider
+                      defaultValue={[user.stats.agility]}
+                      max={100}
+                      step={1}
+                      onValueChange={(value) => {
+                        const newStats = {
+                          ...user.stats,
+                          agility: value[0]
+                        }
+                        handleRateUser(user.id, newStats)
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Técnica</label>
-                  <Slider
-                    defaultValue={[user.stats?.tecnica || 0]}
-                    max={100}
-                    step={1}
-                    onValueChange={(value) => {
-                      const newStats = {
-                        ...user.stats,
-                        tecnica: value[0]
-                      }
-                      handleRateUser(user.id, newStats as UserStats)
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Fuerza</label>
-                  <Slider
-                    defaultValue={[user.stats?.fuerza || 0]}
-                    max={100}
-                    step={1}
-                    onValueChange={(value) => {
-                      const newStats = {
-                        ...user.stats,
-                        fuerza: value[0]
-                      }
-                      handleRateUser(user.id, newStats as UserStats)
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">Agilidad</label>
-                  <Slider
-                    defaultValue={[user.stats?.agilidad || 0]}
-                    max={100}
-                    step={1}
-                    onValueChange={(value) => {
-                      const newStats = {
-                        ...user.stats,
-                        agilidad: value[0]
-                      }
-                      handleRateUser(user.id, newStats as UserStats)
-                    }}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   )

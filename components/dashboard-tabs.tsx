@@ -16,6 +16,7 @@ export default function DashboardTabs() {
   const [activeTab, setActiveTab] = useState("users")
   const [isOffline, setIsOffline] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   useEffect(() => {
     const auth = getAuth()
@@ -23,10 +24,14 @@ export default function DashboardTabs() {
     // Verificar el estado de autenticación
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        router.push("/")
+        setAuthError("No estás autenticado. Serás redirigido al login.")
+        setTimeout(() => {
+          router.push("/")
+        }, 2000)
         return
       }
       setIsLoading(false)
+      setAuthError(null)
     })
 
     // Monitorear el estado de la conexión
@@ -50,13 +55,24 @@ export default function DashboardTabs() {
       router.push("/")
     } catch (error) {
       console.error("Error al cerrar sesión:", error)
+      setAuthError("Error al cerrar sesión. Por favor, intenta nuevamente.")
     }
   }
 
   if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-white">Cargando...</div>
+        <div className="text-white">Cargando dashboard...</div>
+      </div>
+    )
+  }
+
+  if (authError) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Alert variant="destructive" className="bg-red-900 border-red-800 text-white">
+          <AlertDescription>{authError}</AlertDescription>
+        </Alert>
       </div>
     )
   }
