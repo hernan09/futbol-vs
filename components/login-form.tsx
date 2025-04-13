@@ -1,185 +1,122 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Info } from "lucide-react"
-import { signIn } from "@/lib/auth"
+import { signIn } from "@/app/actions"
 
 export default function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [username, setUsername] = useState("")
-  const [isSignUp, setIsSignUp] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isOffline, setIsOffline] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
-
-  useEffect(() => {
-    // Monitorear el estado de la conexión
-    const handleOnline = () => setIsOffline(false)
-    const handleOffline = () => setIsOffline(true)
-
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-    setIsOffline(!navigator.onLine)
-
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
+    setIsLoading(true)
 
     try {
-      if (isOffline) {
-        throw new Error("No se puede autenticar en modo offline")
-      }
-
-      console.log("Attempting to authenticate with:", { email, isSignUp })
+      const result = await signIn(email, password)
       
-      const result = await signIn(email, password, isSignUp ? username : undefined)
-      console.log("Authentication result:", result)
-
-      if (!result) {
-        throw new Error("Authentication failed - no session returned")
-      }
-
-      // Force a hard refresh to ensure the session is properly set
-      window.location.href = "/dashboard"
-    } catch (err: any) {
-      console.error("Detailed authentication error:", err)
-      let errorMessage = "Error de autenticación"
-      
-      if (err.code) {
-        switch (err.code) {
-          case "auth/invalid-credential":
-            errorMessage = "Credenciales inválidas. Por favor, verifica tu email y contraseña."
-            break
-          case "auth/invalid-email":
-            errorMessage = "El correo electrónico no es válido"
-            break
-          case "auth/user-disabled":
-            errorMessage = "Esta cuenta ha sido deshabilitada"
-            break
-          case "auth/user-not-found":
-            errorMessage = "No se encontró una cuenta con este correo electrónico"
-            break
-          case "auth/wrong-password":
-            errorMessage = "Contraseña incorrecta"
-            break
-          case "auth/email-already-in-use":
-            errorMessage = "Este correo electrónico ya está registrado"
-            break
-          case "auth/weak-password":
-            errorMessage = "La contraseña debe tener al menos 6 caracteres"
-            break
-          default:
-            errorMessage = err.message || "Error de autenticación"
+      if (result.error) {
+        // Manejar diferentes tipos de errores de Firebase
+        let errorMessage = "Error al iniciar sesión"
+        if (typeof result.error === 'object' && result.error.code) {
+          switch (result.error.code) {
+            case "auth/invalid-credential":
+              errorMessage = "Credenciales inválidas. Por favor, verifica tu email y contraseña."
+              break
+            case "auth/invalid-email":
+              errorMessage = "El correo electrónico no es válido"
+              break
+            case "auth/user-disabled":
+              errorMessage = "Esta cuenta ha sido deshabilitada"
+              break
+            case "auth/user-not-found":
+              errorMessage = "No se encontró una cuenta con este correo electrónico"
+              break
+            case "auth/wrong-password":
+              errorMessage = "Contraseña incorrecta"
+              break
+            default:
+              errorMessage = result.error.message || "Error de autenticación"
+          }
+        } else if (typeof result.error === 'string') {
+          errorMessage = result.error
         }
+        setError(errorMessage)
+        return
       }
-      
-      setError(errorMessage)
+
+      router.push("/dashboard")
+    } catch (err: any) {
+      setError(err.message || "Error al iniciar sesión")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
   return (
-    <Card className="border-slate-700 bg-slate-800 text-white">
-      <CardHeader>
-        <CardTitle>{isSignUp ? "Create Account" : "Login"}</CardTitle>
-        <CardDescription className="text-slate-400">
-          {isSignUp ? "Enter your details to create an account" : "Enter your credentials to login"}
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          {isOffline && (
-            <Alert className="bg-amber-900 border-amber-800 text-white">
-              <Info className="h-4 w-4" />
-              <AlertDescription>Estás en modo offline. No puedes autenticarte sin conexión.</AlertDescription>
-            </Alert>
-          )}
+    <div className="w-full max-w-md space-y-8">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold tracking-tight text-white">Iniciar Sesión</h2>
+        <p className="mt-2 text-sm text-slate-400">
+          Ingresa tus credenciales para acceder al dashboard
+        </p>
+      </div>
 
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium text-slate-300">
+      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="email" className="text-white">
               Email
-            </label>
+            </Label>
             <Input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="border-slate-700 bg-slate-900 text-white"
-              placeholder="ejemplo@email.com"
+              className="mt-1 bg-slate-800 text-white border-slate-700"
+              placeholder="tu@email.com"
             />
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-sm font-medium text-slate-300">
-              Password
-            </label>
+          <div>
+            <Label htmlFor="password" className="text-white">
+              Contraseña
+            </Label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="border-slate-700 bg-slate-900 text-white"
+              className="mt-1 bg-slate-800 text-white border-slate-700"
               placeholder="••••••••"
             />
           </div>
+        </div>
 
-          {isSignUp && (
-            <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium text-slate-300">
-                Username
-              </label>
-              <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required={isSignUp}
-                className="border-slate-700 bg-slate-900 text-white"
-                placeholder="Nombre de usuario"
-              />
-            </div>
-          )}
+        {error && (
+          <Alert variant="destructive" className="bg-red-900 border-red-800 text-white">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-          {error && (
-            <Alert variant="destructive" className="bg-red-900 border-red-800 text-white">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-4">
-          <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-            {loading ? "Processing..." : isSignUp ? "Sign Up" : "Login"}
-          </Button>
-          <Button
-            type="button"
-            variant="link"
-            className="text-slate-400 hover:text-white"
-            onClick={() => setIsSignUp(!isSignUp)}
-          >
-            {isSignUp ? "Already have an account? Login" : "Don't have an account? Sign Up"}
-          </Button>
-        </CardFooter>
+        <Button
+          type="submit"
+          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+          disabled={isLoading}
+        >
+          {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
+        </Button>
       </form>
-    </Card>
+    </div>
   )
 }

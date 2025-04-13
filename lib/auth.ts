@@ -3,29 +3,32 @@
 import { cookies } from "next/headers"
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth"
 import { doc, setDoc, getDoc, enableIndexedDbPersistence } from "firebase/firestore"
-import { auth, db } from "./firebase-config"
+import { auth, db } from "@/lib/firebase-config"
 
 interface FirebaseError extends Error {
   code?: string
 }
 
 export async function getSession() {
-  const cookieStore = await cookies()
-  const session = cookieStore.get("session")?.value
-
-  if (!session) return null
-
   try {
-    const parsedSession = JSON.parse(session)
-    // Verify the session is still valid with Firebase
-    const user = auth.currentUser
-    if (!user || user.uid !== parsedSession.id) {
-      await cookieStore.delete("session")
+    const cookieStore = cookies()
+    const sessionCookie = (await cookieStore).get("session")
+    
+    if (!sessionCookie?.value) {
       return null
     }
+
+    const parsedSession = JSON.parse(sessionCookie.value)
+    const user = auth.currentUser
+
+    if (!user || user.uid !== parsedSession.id) {
+      // No eliminamos la cookie aquí, lo haremos en una Server Action
+      return null
+    }
+
     return parsedSession
   } catch (error) {
-    console.error("Session parsing error:", error)
+    console.error("Error al obtener la sesión:", error)
     return null
   }
 }
@@ -83,45 +86,33 @@ export async function signIn(email: string, password: string, username?: string)
       throw new Error("Authentication failed - no user returned")
     }
 
-    // Set session cookie
     const session = {
       id: user.uid,
       email: user.email,
+      name: user.displayName || "Usuario",
     }
 
-    const cookieStore = await cookies()
-    await cookieStore.set("session", JSON.stringify(session), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 week
-      path: "/",
-      sameSite: "lax"
-    })
-
-    return session
+    // La cookie se establecerá en una Server Action
+    return { user: session, error: null }
   } catch (error: any) {
-    console.error("Authentication error:", error)
+    console.error("Error al iniciar sesión:", error)
     // Preserve Firebase error codes
     if (error.code) {
       const firebaseError: FirebaseError = new Error(error.message)
       firebaseError.code = error.code
-      throw firebaseError
+      return { user: null, error: firebaseError }
     }
-    throw error
+    return { user: null, error: error.message }
   }
 }
 
 export async function signOut() {
   try {
-    if (!auth) {
-      throw new Error("Firebase not initialized")
-    }
-
     await auth.signOut()
-    const cookieStore = await cookies()
-    await cookieStore.delete("session")
-  } catch (error) {
-    console.error("Sign out error:", error)
-    throw error
+    // La cookie se eliminará en una Server Action
+    return { error: null }
+  } catch (error: any) {
+    console.error("Error al cerrar sesión:", error)
+    return { error: error.message }
   }
 }

@@ -7,23 +7,27 @@ import UsersList from "@/components/users-list"
 import UserProfile from "@/components/user-profile"
 import { Button } from "@/components/ui/button"
 import { LogOut, Wifi, WifiOff } from "lucide-react"
-import { getAuth } from "firebase/auth"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { signOut } from "@/app/actions"
 
 export default function DashboardTabs() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("users")
-  const [isClient, setIsClient] = useState(false)
   const [isOffline, setIsOffline] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    setIsClient(true)
-
-    // Verificar si el usuario está autenticado
-    const session = localStorage.getItem("session")
-    if (!session) {
-      router.push("/")
-    }
+    const auth = getAuth()
+    
+    // Verificar el estado de autenticación
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        router.push("/")
+        return
+      }
+      setIsLoading(false)
+    })
 
     // Monitorear el estado de la conexión
     const handleOnline = () => setIsOffline(false)
@@ -34,6 +38,7 @@ export default function DashboardTabs() {
     setIsOffline(!navigator.onLine)
 
     return () => {
+      unsubscribe()
       window.removeEventListener("online", handleOnline)
       window.removeEventListener("offline", handleOffline)
     }
@@ -41,17 +46,19 @@ export default function DashboardTabs() {
 
   const handleSignOut = async () => {
     try {
-      const auth = getAuth()
-      await auth.signOut()
-      localStorage.removeItem("session")
+      await signOut()
       router.push("/")
     } catch (error) {
       console.error("Error al cerrar sesión:", error)
     }
   }
 
-  if (!isClient) {
-    return <div>Cargando...</div>
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-white">Cargando...</div>
+      </div>
+    )
   }
 
   return (

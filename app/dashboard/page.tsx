@@ -1,19 +1,16 @@
 import Link from "next/link"
 import { cookies } from "next/headers"
 import DashboardTabs from "@/components/dashboard-tabs"
+import { getAuth } from "firebase/auth"
+import { auth } from "@/lib/firebase-config"
 
 export default async function DashboardPage() {
   // Verificamos la sesión del lado del servidor
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("session")
 
-  // Nota: localStorage solo está disponible en el cliente, así que no podemos verificarlo aquí
-  const isAuthenticated = !!sessionCookie?.value
-
-  // En un entorno de producción, deberíamos verificar la sesión con Firebase Admin SDK
-  // Pero para simplificar, solo verificamos si existe la cookie
-
-  if (!isAuthenticated) {
+  // Si no hay cookie de sesión, redirigimos al login
+  if (!sessionCookie?.value) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-4 text-white">
         <div className="w-full max-w-md text-center">
