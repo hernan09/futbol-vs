@@ -1,12 +1,13 @@
-import { redirect } from "next/navigation"
-import LoginForm from "@/components/login-form"
-import { getSession } from "@/lib/auth"
+"use client"
 
-export default async function Home() {
-  const session = await getSession()
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
 
-  if (session) {
-    redirect("/dashboard")
+export default function Home() {
+  const router = useRouter()
+
+  const handleEnter = () => {
+    router.push("/dashboard")
   }
 
   return (
@@ -16,7 +17,15 @@ export default async function Home() {
           <h1 className="text-4xl font-bold text-white">Team Builder</h1>
           <p className="mt-2 text-slate-300">Rate players and build the perfect team</p>
         </div>
-        <LoginForm />
+        <div className="text-center">
+          <Button 
+            onClick={handleEnter}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+            size="lg"
+          >
+            Enter Dashboard
+          </Button>
+        </div>
       </div>
     </div>
   )
